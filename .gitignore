@@ -1,0 +1,20 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.local
+.DS_Store
+backend/uploads/*
+!backend/uploads/.gitkeep
+__pycache__/
+.venv/
+backend/cache/
+# Cache-urile uneltelor și jurnalele
+.pytest_cache/
+.ruff_cache/
+*.log
+# Setările locale ale editorului și ale asistentului AI
+.vscode/
+.idea/
+.claude/settings.local.json
