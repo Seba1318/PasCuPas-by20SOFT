@@ -16,8 +16,9 @@ import sys
 from pathlib import Path
 
 from alembic.config import Config
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 from sqlalchemy.engine import make_url
+from sqlalchemy.orm import Session
 
 from alembic import command
 from app import config
@@ -45,6 +46,16 @@ def wipe_uploads(folder: Path) -> int:
     return removed
 
 
+def saved_superadmins(db: Session) -> list[tuple[str, str]]:
+    """Superadminii de păstrat (email, hash-ul parolei). Pe o bază nouă, fără tabele, niciunul."""
+    if not inspect(db.connection()).has_table("users"):
+        return []
+    return [
+        (u.email, u.password_hash)
+        for u in db.scalars(select(User).where(User.role == "superadmin"))
+    ]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--da", action="store_true", help="confirm: șterge datele de test")
@@ -54,10 +65,7 @@ def main() -> None:
         sys.exit("Comanda șterge toate datele de test. Rulați din nou cu --da ca să confirmați.")
 
     with SessionLocal() as db:
-        admins = [
-            (u.email, u.password_hash)
-            for u in db.scalars(select(User).where(User.role == "superadmin"))
-        ]
+        admins = saved_superadmins(db)
 
     alembic = Config(str(BACKEND / "alembic.ini"))
     alembic.set_main_option("script_location", str(BACKEND / "alembic"))
