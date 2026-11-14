@@ -10,11 +10,14 @@ const proxy = {
   '/api': { target: API_TARGET, rewrite: (path) => path.replace(/^\/api/, '') },
   '/media': { target: API_TARGET },
 };
+// Vite răspunde doar pe localhost; adresele tunelului Cloudflare (testul pe telefon, HTTPS) le
+// adăugăm aici, altfel telefonul primește „Blocked request”.
+const allowedHosts = ['.trycloudflare.com'];
 
 export default defineConfig({
   plugins: [react()],
-  server: { port: 5173, proxy },
-  preview: { port: 4173, proxy },
+  server: { port: 5173, proxy, allowedHosts },
+  preview: { port: 4173, proxy, allowedHosts },
   build: {
     rollupOptions: {
       output: {

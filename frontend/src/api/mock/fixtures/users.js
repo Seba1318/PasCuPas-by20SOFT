@@ -1,5 +1,6 @@
 // Conturi doar pentru modul mock (VITE_USE_MOCKS=true). Nu există în backend.
-export const MOCK_PASSWORD = 'parola-demo';
+// Aceeași parolă ca a conturilor demo din backend/scripts/seed_fake.py.
+export const MOCK_PASSWORD = 'parola-demo1';
 
 export const users = [
   { id: 1, email: 'andreea@exemplu.ro', display_name: 'Andreea', avatar_url: null, role: 'user', institution: null, is_verified: true, trust_level: 100, confirmed_reports_count: 3, created_at: '2026-09-14T10:00:00Z' },

@@ -163,6 +163,9 @@ CAMIN_1 = (21.2389, 45.7469)
 RECTORAT = (21.2257, 45.7536)
 UMF = (21.2236, 45.7525)
 DETOUR_M = (80, 300)  # cât de lung poate fi ocolul accesibil (planul: „ocolește 150 m”)
+# Pe drumul spre Rectorat, doar treapta pusă de scenariu oprește scaunul cu rotile.
+CORRIDOR_KERB_CM = 2
+CORRIDOR_INCLINE_PCT = 5
 
 # Situații puse pe segmentul cel mai apropiat de un punct.
 SCENARIOS = [
@@ -177,14 +180,16 @@ SCENARIOS = [
 
 
 def seed_scenarios(db: Session) -> None:
+    scenario_edges = set()
     for title, (lon, lat), attrs in SCENARIOS:
         point = func.ST_SetSRID(func.ST_MakePoint(lon, lat), 4326)
         # <-> = distanța folosind indexul GIST: cel mai apropiat segment de punct.
         edge_id = db.scalar(select(GraphEdge.id).order_by(GraphEdge.geom.op("<->")(point)).limit(1))
         db.execute(update(GraphEdge).where(GraphEdge.id == edge_id).values(**attrs))
+        scenario_edges.add(edge_id)
         print(f"Scenariu: {title} → segmentul {edge_id}")
     db.flush()
-    seed_rectorat_stairs(db)
+    seed_rectorat_stairs(db, keep=scenario_edges)
     seed_umf_unreachable(db)
 
 
@@ -192,21 +197,40 @@ def _wheelchair_cost(now):
     return lambda edge, direction: edge_cost(edge, direction, WHEELCHAIR, now)
 
 
-def seed_rectorat_stairs(db: Session) -> None:
+def clear_corridor(db: Session, graph, edge_ids: list[int], keep: set[int]) -> None:
+    """Scoate obstacolele aleatoare de pe drumul cel mai scurt (în bază și în graful din
+    memorie): altfel treptele și bordurile puse la întâmplare pot face ocolul accesibil prea
+    lung, iar scenariul nu mai arată ce trebuie. Segmentele altor scenarii rămân neatinse."""
+    for edge_id in edge_ids:
+        if edge_id in keep:
+            continue
+        edge = graph.edges[edge_id]
+        edge.has_stairs = False
+        edge.kerb_height_cm = min(edge.kerb_height_cm, CORRIDOR_KERB_CM)
+        edge.incline_pct = max(-CORRIDOR_INCLINE_PCT, min(CORRIDOR_INCLINE_PCT, edge.incline_pct))
+        if edge.surface == "gravel":
+            edge.surface = "asphalt"
+        db.execute(
+            update(GraphEdge)
+            .where(GraphEdge.id == edge_id)
+            .values(
+                has_stairs=False,
+                kerb_height_cm=edge.kerb_height_cm,
+                incline_pct=edge.incline_pct,
+                surface=edge.surface,
+            )
+        )
+
+
+def seed_rectorat_stairs(db: Session, keep: set[int] = frozenset()) -> None:
     """Scări pe drumul cel mai scurt Căminul 1 → Rectorat, alese astfel încât traseul pentru
-    scaun cu rotile să existe și să ocolească 80–300 m. Căutăm cu A* pe graful real, de la
-    capătul dinspre Rectorat spre start."""
+    scaun cu rotile să existe și să ocolească 80–300 m. Curățăm întâi drumul de obstacolele
+    aleatoare, apoi căutăm cu A* pe graful real, de la capătul dinspre Rectorat spre start."""
     now = datetime.now(UTC)
     graph = load_graph(db, now)
     start, goal = snap(db, *CAMIN_1).node_id, snap(db, *RECTORAT).node_id
     shortest = astar(graph, start, goal, lambda edge, direction: edge.length_m)
-    accessible = astar(graph, start, goal, _wheelchair_cost(now))
-    on_path = [e for e, _ in shortest.steps if graph.edges[e].has_stairs]
-    if on_path and accessible is not None:
-        detour = accessible.length_m(graph) - shortest.length_m(graph)
-        if DETOUR_M[0] <= detour <= DETOUR_M[1]:  # pus deja, la o rulare anterioară
-            print(f"Scenariu: Scări spre Rectoratul UPT există deja; ocol de {detour:.0f} m")
-            return
+    clear_corridor(db, graph, [edge_id for edge_id, _ in shortest.steps], keep)
     for edge_id, _ in reversed(shortest.steps):
         edge = graph.edges[edge_id]
         if edge.is_crossing or edge.has_stairs:

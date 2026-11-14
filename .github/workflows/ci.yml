@@ -1,0 +1,60 @@
+# Rulează la fiecare PR și la fiecare push pe main (planul 20SOFT · Reguli Git și Teste obligatorii):
+# backend: Ruff + pytest pe o bază PostGIS separată (navigare_test); frontend: testele + build-ul.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      db:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: navigare
+          POSTGRES_PASSWORD: navigare
+          POSTGRES_DB: navigare_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U navigare -d navigare_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://navigare:navigare@localhost:5432/navigare_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Dependențe (Python din .python-version, versiuni din uv.lock)
+        run: uv sync --locked
+      - name: Ruff
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Teste
+        run: uv run pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Teste
+        run: npm test
+      - name: Build
+        run: npm run build

@@ -37,6 +37,7 @@ CACHE = config.REPO_ROOT / "backend" / "cache" / "smtt-timisoara-gtfs.zip"
 MARGIN_LON, MARGIN_LAT = 0.0065, 0.0045  # ~500 m la latitudinea Timișoarei
 ROUTE_TYPES = {"0": "tram", "3": "bus", "11": "trolleybus"}  # 4 = vaporetto, îl lăsăm deoparte
 SEED = 2026
+DEMO_DAYS_AHEAD = 14
 
 
 def read_feed(args) -> zipfile.ZipFile:
@@ -86,6 +87,37 @@ def service_days(feed: zipfile.ZipFile) -> dict[str, list[date]]:
     return {service: sorted(d) for service, d in days.items()}
 
 
+def feed_range(feed: zipfile.ZipFile) -> tuple[date, date]:
+    """Prima și ultima zi pe care le descrie fișierul (calendar.txt și calendar_dates.txt)."""
+    texts = [r[k] for r in rows(feed, "calendar") for k in ("start_date", "end_date")]
+    texts += [r["date"] for r in rows(feed, "calendar_dates")]
+    days = [datetime.strptime(text, "%Y%m%d").date() for text in texts]
+    return min(days), max(days)
+
+
+def cover_demo_days(
+    days: dict[str, list[date]], first: date, last: date, demo_day: date
+) -> tuple[dict[str, list[date]], list[date]]:
+    """SMTT publică orarul pe perioade. Dacă demo-ul cade înainte sau după perioada din fișier,
+    zilele din jurul lui (de ieri, pentru cursele de după miezul nopții, până peste 14 zile)
+    folosesc orarul aceleiași zile a săptămânii din prima, respectiv ultima săptămână."""
+    covered: dict[str, set[date]] = {service: set(d) for service, d in days.items()}
+    added = []
+    for offset in range(-1, DEMO_DAYS_AHEAD + 1):
+        day = demo_day + timedelta(days=offset)
+        if first <= day <= last:
+            continue
+        if day < first:
+            same = first + timedelta(days=(day.weekday() - first.weekday()) % 7)
+        else:
+            same = last - timedelta(days=(last.weekday() - day.weekday()) % 7)
+        added.append(day)
+        for running_days in covered.values():
+            if same in running_days:
+                running_days.add(day)
+    return {service: sorted(d) for service, d in covered.items()}, added
+
+
 def fake_vehicle(rng: random.Random, kind: str) -> dict:
     """Dotări fictive: tramvaiele vechi au mai rar podea joasă decât autobuzele."""
     low_floor = rng.random() < (0.6 if kind == "tram" else 0.85)
@@ -109,6 +141,13 @@ def main() -> None:
     parser.add_argument("--file", help="arhivă GTFS locală, în loc de descărcare")
     parser.add_argument(
         "--replace", action="store_true", help="șterge datele de transport existente"
+    )
+    parser.add_argument(
+        "--zi-demo",
+        type=date.fromisoformat,
+        default=datetime.now(config.LOCAL_TIME).date(),
+        help="ziua demo-ului (AAAA-LL-ZZ), implicit azi; orarul o acoperă chiar dacă "
+        "fișierul GTFS începe mai târziu sau s-a terminat",
     )
     args = parser.parse_args()
     rng = random.Random(SEED)
@@ -134,7 +173,14 @@ def main() -> None:
         trips = [
             r for r in rows(feed, "trips") if r["trip_id"] in times and r["route_id"] in routes
         ]
-        days = service_days(feed)
+        first, last = feed_range(feed)
+        days, borrowed = cover_demo_days(service_days(feed), first, last, args.zi_demo)
+        if borrowed:
+            print(
+                f"Fișierul GTFS acoperă {first:%d.%m.%Y}–{last:%d.%m.%Y}. Pentru "
+                f"{borrowed[0]:%d.%m}–{borrowed[-1]:%d.%m} folosim orarul aceleiași zile a "
+                "săptămânii din fișier."
+            )
 
         if args.replace:
             clear(db)

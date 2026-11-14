@@ -77,6 +77,24 @@ test('the shape checker itself reports problems', () => {
   assert.deepEqual(checkShape({ code: 'X' }, { code: CODE }), [`code: „X” nu se potrivește cu ${CODE}`]);
 });
 
+test('the mock accepts the same demo password as backend/scripts/seed_fake.py', async () => {
+  const res = await mockRequest('POST', '/auth/login', { email: 'andreea@exemplu.ro', password: 'parola-demo1' });
+  assert.equal(res.token_type, 'bearer');
+});
+
+test('PATCH /admin/works/{id} changes a planned work (mock)', async () => {
+  const ctx = { token: 'mock:primarie@exemplu.ro' };
+  const { features } = await mockRequest('GET', '/admin/works', undefined, ctx);
+  const work = features[0];
+  const line = { type: 'LineString', coordinates: [[21.23, 45.747], [21.235, 45.747]] };
+  const changed = await mockRequest('PATCH', `/admin/works/${work.id}`, { title: 'Trotuar nou', blocks_route: false, geometry: line }, ctx);
+  assert.equal(changed.properties.title, 'Trotuar nou');
+  assert.equal(changed.properties.blocks_route, false);
+  assert.deepEqual(changed.geometry, line);
+  assert.equal(changed.properties.start_date, work.properties.start_date); // ce nu trimiți rămâne
+  await assert.rejects(mockRequest('PATCH', '/admin/works/9999', { title: 'X' }, ctx), { status: 404 });
+});
+
 test('PATCH /users/me changes the display name (mock)', async () => {
   const ctx = { token: 'mock:andreea@exemplu.ro' }; // mereu mock-ul, și când CONTRACT_TOKEN e un JWT real
   const user = await mockRequest('PATCH', '/users/me', { display_name: '  Ana   Pop ' }, ctx);
