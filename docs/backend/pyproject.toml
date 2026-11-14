@@ -1,0 +1,47 @@
+[project]
+name = "navigare-backend"
+version = "0.1.0"
+description = "Pas cu Pas — API FastAPI pentru navigare accesibilă (20SOFT)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",   # serverul; [standard] aduce python-dotenv pentru --env-file
+    "sqlalchemy>=2.0",
+    "geoalchemy2>=0.15",         # coloane geografice (Point, LineString) pentru PostGIS
+    "psycopg[binary]>=3.2",      # driverul PostgreSQL din DATABASE_URL (postgresql+psycopg://)
+    "alembic>=1.13",
+    "pydantic>=2.7",
+    "email-validator>=2.1",      # pentru EmailStr din Pydantic
+    "pyjwt>=2.9",
+    "pwdlib[bcrypt]>=0.2",
+    "fastapi-mail>=1.4",
+    "pillow>=10",                # verifică poza, citește EXIF, o salvează fără metadate
+    "python-multipart>=0.0.9",   # cerut de FastAPI pentru formulare cu fișiere (poza raportului)
+    "anthropic>=1.0",
+]
+
+[dependency-groups]
+# uv sync instalează implicit grupul dev.
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "httpx>=0.27",               # cerut de TestClient din FastAPI
+]
+# Doar pentru scripts/import_osm.py (rulat o singură dată): uv sync --group data
+data = [
+    "osmnx>=2.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+# B008: Depends(...) în argumentele implicite e stilul FastAPI.
+ignore = ["B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# TestClient funcționează cu httpx; avertismentul despre httpx2 nu ne afectează.
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]
