@@ -9,16 +9,18 @@ import Alert from '../../ui/Alert.jsx';
 import Button from '../../ui/Button.jsx';
 import MarkersLayer from '../../components/map/MarkersLayer.jsx';
 import { useMapContext, useMapOverlay } from '../../components/map/MapContext.jsx';
-import { toLatLng } from '../../components/map/geo.js';
+import { bboxAround, nearestFeature, toLatLng } from '../../components/map/geo.js';
 import { buildReportForm, createDraftStore, isVehicleCategory, reportSteps, validateDetails } from '../../reports/reportDraft.js';
 import { categoryLabel } from '../../reports/categories.js';
-import { reports } from '../../api/endpoints.js';
+import { reports, transit } from '../../api/endpoints.js';
 import { useAuth } from '../../auth/AuthProvider.jsx';
 import { parseLonLat } from '../route/routeUtils.js';
 import { usePanel } from '../../layout/PanelContext.jsx';
 import { panelWidth } from '../../layout/breakpoints.js';
 
 const store = createDraftStore();
+// Raza în care căutăm stația pentru un raport despre un vehicul (aceeași ca la traseele cu transport).
+const NEAR_STOP_M = 500;
 const EMPTY = { category: null, point: null, pointSource: null, location_text: '', description: '', vehicle: null, equipment: null, stop: null };
 
 function initialDraft(params) {
@@ -51,6 +53,7 @@ export default function ReportFlow() {
   const [gps, setGps] = useState(null);
   const [gpsNote, setGpsNote] = useState(null);
   const [vehicleInfo, setVehicleInfo] = useState(null);
+  const [stopInfo, setStopInfo] = useState(null); // null | { status: 'searching' | 'found' | 'none', name?, note? }
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState(null);
@@ -87,6 +90,46 @@ export default function ReportFlow() {
     // doar la intrarea în pasul de detalii
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
+
+  // Raport despre un vehicul fără stație aleasă: pornim de la stația cea mai apropiată de utilizator
+  // (planul 20SOFT · Rapoarte pentru vehicule: vehiculul se alege din sosirile stației apropiate).
+  useEffect(() => {
+    if (step !== 'vehicle' || draft.stop) return undefined;
+    let cancelled = false;
+    const none = (note) => !cancelled && setStopInfo({ status: 'none', note });
+    setStopInfo({ status: 'searching' });
+    if (!navigator.geolocation) {
+      none('Browserul nu oferă localizare.');
+      return undefined;
+    }
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        if (cancelled) return;
+        const point = [pos.coords.longitude, pos.coords.latitude];
+        const g = { point, accuracy: pos.coords.accuracy };
+        setGps(g);
+        setUserPosition(g);
+        try {
+          const res = await transit.stops({ bbox: bboxAround(point, NEAR_STOP_M).join(',') });
+          const stop = nearestFeature(point, res.features, NEAR_STOP_M);
+          if (cancelled) return;
+          if (!stop) {
+            none(`Nu e nicio stație la mai puțin de ${NEAR_STOP_M} m de tine.`);
+            return;
+          }
+          setStopInfo({ status: 'found', name: stop.properties.name });
+          set({ stop: stop.id });
+        } catch (err) {
+          none(err.detail ?? 'Nu am putut încărca stațiile.');
+        }
+      },
+      () => none('Nu știm unde ești: browserul nu are voie să folosească locația.'),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [step, draft.stop, set, setUserPosition]);
 
   const onMapPick = useCallback(
     (point) => {
@@ -177,7 +220,8 @@ export default function ReportFlow() {
     } else if (step === 'vehicle') {
       content = (
         <StepVehicle
-          stopId={draft.stop ?? 1}
+          stopId={draft.stop}
+          stopInfo={stopInfo}
           value={draft.vehicle}
           error={errors.vehicle}
           onPick={(vehicle, info) => {

@@ -10,6 +10,7 @@ import PhotoPicker from './PhotoPicker.jsx';
 import Field from '../../ui/Field.jsx';
 import Button from '../../ui/Button.jsx';
 import Skeleton from '../../ui/Skeleton.jsx';
+import Alert from '../../ui/Alert.jsx';
 import MiniMap from '../../components/map/MiniMap.jsx';
 
 // E1: categoria. Fiecare opțiune e un buton mare, cu iconiță și text.
@@ -39,20 +40,45 @@ export function StepCategory({ value, onPick }) {
 }
 
 // E2: vehiculul, din sosirile stației apropiate.
-export function StepVehicle({ stopId, value, onPick, onContinue, error }) {
+// stopInfo vine din căutarea stației după GPS: { status: 'searching' | 'found' | 'none', name?, note? }.
+export function StepVehicle({ stopId, stopInfo, value, onPick, onContinue, error }) {
   const [arrivals, setArrivals] = useState(null);
   useEffect(() => {
+    if (!stopId) return;
+    setArrivals(null);
     transit
       .arrivals(stopId)
       .then(setArrivals)
       .catch(() => setArrivals([]));
   }, [stopId]);
 
+  if (!stopId) {
+    return (
+      <>
+        <h2 className="m-0 text-title-3">În ce vehicul ai fost?</h2>
+        {stopInfo?.status === 'none' ? (
+          <div className="flex flex-col gap-1">
+            <Alert tone="info" showKind={false} title="Alege stația">
+              {stopInfo.note} Deschide stația de pe hartă și apasă „Raportează o problemă la un vehicul”.
+            </Alert>
+            <Link to="/" className="inline-flex min-h-target items-center text-[17px] font-semibold">
+              Alege stația pe hartă
+            </Link>
+          </div>
+        ) : (
+          <Skeleton text="Căutăm stația cea mai apropiată de tine…" lines={2} />
+        )}
+      </>
+    );
+  }
+
   return (
     <>
       <div className="flex flex-col gap-1">
         <h2 className="m-0 text-title-3">În ce vehicul ai fost?</h2>
-        <p className="m-0 text-[17px] text-ink-muted">Din stația cea mai apropiată de tine.</p>
+        <p className="m-0 text-[17px] text-ink-muted">
+          {stopInfo?.status === 'found' ? `Stația ${stopInfo.name}, cea mai apropiată de tine.` : 'Din stația aleasă.'}
+        </p>
         <Link to={`/statie/${stopId}`} className="inline-flex min-h-target items-center text-[17px] font-semibold">
           Schimbă stația
         </Link>

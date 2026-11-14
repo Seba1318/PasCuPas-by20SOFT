@@ -1,6 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { breakpointFor, panelWidth, NAV_ITEMS, activeNav } from './breakpoints.js';
+import { breakpointFor, panelWidth, NAV_ITEMS, activeNav, isPhoneScreen } from './breakpoints.js';
+
+test('a phone stays a phone when rotated; tablets and desktops do not', () => {
+  assert.equal(isPhoneScreen({ width: 390, height: 844, coarse: true }), true); // iPhone, portret
+  assert.equal(isPhoneScreen({ width: 844, height: 390, coarse: true }), true); // iPhone, rotit
+  assert.equal(isPhoneScreen({ width: 768, height: 1024, coarse: true }), false); // iPad, portret
+  assert.equal(isPhoneScreen({ width: 1024, height: 768, coarse: true }), false); // iPad, rotit
+  assert.equal(isPhoneScreen({ width: 1280, height: 700, coarse: false }), false); // laptop cu fereastră joasă
+  assert.equal(isPhoneScreen({ width: 600, height: 900, coarse: false }), true); // fereastră îngustă: layout de telefon
+});
 
 test('phone under 768, tablet 768–1279, desktop from 1280', () => {
   assert.equal(breakpointFor(390), 'phone');

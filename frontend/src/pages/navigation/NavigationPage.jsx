@@ -14,10 +14,12 @@ import { etaClock, pointsAlong } from '../../navigation/simulate.js';
 import { speaker } from '../../accessibility/voice.js';
 import { PATTERNS, vibrate } from '../../accessibility/vibrate.js';
 import { usePrefs } from '../../accessibility/PrefsProvider.jsx';
-import { useBreakpoint } from '../../layout/useBreakpoint.js';
+import { usePhoneScreen } from '../../layout/useBreakpoint.js';
+import { startRouteChecks } from '../../navigation/routeChecks.js';
 import { reports as reportsApi, routes } from '../../api/endpoints.js';
 import { USE_MOCKS } from '../../config/env.js';
 import { formatDistance, formatDuration } from '../../lib/format.js';
+import { metersSpoken } from '../../lib/ro.js';
 import { prefersReducedMotion } from '../../accessibility/useReducedMotion.js';
 import { categoryLabel } from '../../reports/categories.js';
 import { CenterButton, InstructionCard, ManeuverIcon, ProgressSheet, VoiceButton } from './NavParts.jsx';
@@ -137,7 +139,7 @@ function Simplified({ steps, index, setIndex, toNext, onStop, onRepeat }) {
       <div aria-live="polite" className="flex flex-1 flex-col items-center justify-center gap-5 text-center">
         <ManeuverIcon instruction={step.instruction} size="lg" />
         <h1 className="m-0 text-[36px] font-extrabold leading-[44px]">{step.instruction}</h1>
-        {toNext != null && <p className="m-0 text-body-lg">Peste {Math.round(toNext / 5) * 5} metri.</p>}
+        {toNext != null && <p className="m-0 text-body-lg">Peste {metersSpoken(Math.round(toNext / 5) * 5)}.</p>}
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Button variant="secondary" icon={Repeat} onClick={onRepeat}>
@@ -235,7 +237,7 @@ function NavigationInner({ active, setActive }) {
       return;
     }
     setView({ index: e.nextIndex, toNext: e.toNext_m, remaining: e.remaining_m });
-    if (e.type === 'announce') say(`Peste ${Math.round(e.toNext_m)} de metri, ${e.step.instruction.toLowerCase()}.`);
+    if (e.type === 'announce') say(`Peste ${metersSpoken(e.toNext_m)}, ${e.step.instruction.toLowerCase()}.`);
     if (!stale) {
       const r = findStaleReport([position.lon, position.lat], nearbyReports, new Date(), asked.current);
       if (r) {
@@ -249,21 +251,24 @@ function NavigationInner({ active, setActive }) {
   }, [position]);
 
   // La fiecare 30 de secunde: a apărut o problemă pe traseu? (D7)
-  useEffect(() => {
-    const t = setInterval(async () => {
-      try {
-        const res = await routes.check({ route: active.data.route });
-        if (res.blocked && position) {
+  // Poziția stă într-un ref: dacă ar fi dependență, fiecare poziție GPS nouă (cam o dată pe secundă)
+  // ar reporni ceasul și verificarea n-ar mai ajunge niciodată la 30 de secunde.
+  const positionRef = useRef(position);
+  positionRef.current = position;
+  useEffect(
+    () =>
+      startRouteChecks({
+        everyMs: CHECK_EVERY_MS,
+        check: () => routes.check({ route: active.data.route }),
+        getPosition: () => positionRef.current,
+        onBlocked: async (res, pos) => {
           say('A apărut o problemă pe traseu.', PATTERNS.alert);
-          const data = await replan([position.lon, position.lat], 'blocked');
+          const data = await replan([pos.lon, pos.lat], 'blocked');
           setProposal({ data, reason: res.reason });
-        }
-      } catch {
-        /* verificăm din nou peste 30 de secunde */
-      }
-    }, CHECK_EVERY_MS);
-    return () => clearInterval(t);
-  }, [active, position, replan, say]);
+        },
+      }),
+    [active, replan, say],
+  );
 
   const stop = () => {
     speaker.stop();
@@ -422,7 +427,7 @@ function NavigationInner({ active, setActive }) {
  * Traseul vine din planificare (sessionStorage), ca un refresh să nu-l piardă.
  */
 export default function NavigationPage() {
-  const bp = useBreakpoint();
+  const phoneScreen = usePhoneScreen();
   const [active, setActiveState] = useState(loadActive);
   const setActive = (a) => {
     setActiveState(a);
@@ -432,7 +437,7 @@ export default function NavigationPage() {
       /* fără stocare */
     }
   };
-  if (bp !== 'phone') return <Navigate to="/traseu" replace />;
+  if (!phoneScreen) return <Navigate to="/traseu" replace />;
   if (!active?.data) {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-bg p-6">

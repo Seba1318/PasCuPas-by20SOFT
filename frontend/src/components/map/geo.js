@@ -76,3 +76,24 @@ export function projectOnLine(point, line) {
   }
   return { ...best, total: walked };
 }
+
+// Cel mai apropiat punct GeoJSON de `point`, la cel mult maxM metri; null dacă nu e niciunul.
+export function nearestFeature(point, features, maxM = Infinity) {
+  let best = null;
+  let bestD = maxM;
+  for (const f of features) {
+    const d = distanceM(point, f.geometry.coordinates);
+    if (d <= bestD) {
+      best = f;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+// [minLon, minLat, maxLon, maxLat] care cuprinde un cerc de `meters` în jurul punctului [lon, lat].
+export function bboxAround([lon, lat], meters) {
+  const dLat = meters / ((Math.PI / 180) * EARTH_RADIUS_M);
+  const dLon = dLat / Math.cos(rad(lat));
+  return [lon - dLon, lat - dLat, lon + dLon, lat + dLat];
+}

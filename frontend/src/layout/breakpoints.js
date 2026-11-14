@@ -30,3 +30,10 @@ export function activeNav(pathname) {
   }
   return 'harta';
 }
+
+// Navigarea cu GPS e pentru telefon. Un telefon rotit are lățimea unei tablete, dar rămâne telefon:
+// îl recunoaștem după latura scurtă a ecranului, la un ecran tactil.
+export function isPhoneScreen({ width, height, coarse }) {
+  if (width < TABLET_MIN) return true;
+  return coarse && Math.min(width, height) < TABLET_MIN;
+}

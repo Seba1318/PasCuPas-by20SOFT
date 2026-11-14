@@ -21,6 +21,7 @@ import { formatDistance, formatDuration } from '../../lib/format.js';
 import { DEMO_BBOX } from '../../config/env.js';
 import { ZONE_COLOR } from '../../theme/mapColors.js';
 import { prefersReducedMotion } from '../../accessibility/useReducedMotion.js';
+import { usePhoneScreen } from '../../layout/useBreakpoint.js';
 import Button from '../../ui/Button.jsx';
 import Alert from '../../ui/Alert.jsx';
 import { Tag } from '../../ui/Chip.jsx';
@@ -60,6 +61,8 @@ function ModeSwitch({ mode, onChange }) {
 export default function RoutePlanner() {
   const { breakpoint } = useOutletContext();
   const phone = breakpoint === 'phone';
+  // Un telefon rotit primește layoutul de tabletă, dar poate porni în continuare navigarea.
+  const canNavigate = usePhoneScreen();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const profile = useProfile();
@@ -248,7 +251,7 @@ export default function RoutePlanner() {
               {data.legs ? transitSummary(data.legs, profile) : `${formatDistance(data.length_m)} · pe jos`}
             </span>
           </div>
-          {phone && (
+          {canNavigate && (
             <Button
               icon={Play}
               className="font-extrabold"
@@ -337,7 +340,7 @@ export default function RoutePlanner() {
             >
               {step == null ? 'Previzualizează pas cu pas' : 'Pasul următor'}
             </Button>
-            <span className="text-caption text-ink-muted">Navigarea cu GPS e disponibilă în aplicația de pe telefon.</span>
+            {!canNavigate && <span className="text-caption text-ink-muted">Navigarea cu GPS e disponibilă în aplicația de pe telefon.</span>}
           </div>
         )}
       </section>
