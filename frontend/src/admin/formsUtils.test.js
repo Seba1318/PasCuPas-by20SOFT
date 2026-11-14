@@ -1,6 +1,31 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { workGeometry, validateWork, validateProject, validateEdge, vehicleSummary, parseRoDate } from './formsUtils.js';
+import { workGeometry, workToForm, validateWork, validateProject, validateEdge, vehicleSummary, parseRoDate } from './formsUtils.js';
+
+test('an existing polygon work opens in the form without the closing point', () => {
+  const pts = [[21.1, 45.1], [21.2, 45.1], [21.2, 45.2]];
+  const work = {
+    id: 7,
+    geometry: { type: 'Polygon', coordinates: [[...pts, pts[0]]] },
+    properties: { id: 7, title: 'Trotuar', description: null, start_date: '2026-11-10', end_date: '2026-11-30', blocks_route: true },
+  };
+  assert.deepEqual(workToForm(work), {
+    form: { title: 'Trotuar', description: '', start_date: '2026-11-10', end_date: '2026-11-30', blocks_route: true },
+    mode: 'polygon',
+    points: pts,
+  });
+  assert.deepEqual(workGeometry(workToForm(work).points, 'polygon'), work.geometry);
+});
+
+test('an existing line work opens as a line', () => {
+  const line = [[21.1, 45.1], [21.2, 45.1]];
+  const work = { id: 8, geometry: { type: 'LineString', coordinates: line }, properties: { title: 'Stradă', description: 'Asfaltare', start_date: '2026-11-01', end_date: '2026-11-02', blocks_route: false } };
+  const { form, mode, points } = workToForm(work);
+  assert.equal(mode, 'line');
+  assert.deepEqual(points, line);
+  assert.equal(form.description, 'Asfaltare');
+  assert.equal(form.blocks_route, false);
+});
 
 test('a polygon is closed; a line stays open', () => {
   const pts = [[21.1, 45.1], [21.2, 45.1], [21.2, 45.2]];

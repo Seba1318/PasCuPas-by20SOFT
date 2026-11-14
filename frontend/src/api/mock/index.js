@@ -280,6 +280,14 @@ const routes = [
     works.push(w);
     return w;
   }],
+  ['PATCH', /^\/admin\/works\/(\d+)$/, ([id], q, body, ctx) => {
+    requireAdmin(ctx);
+    const w = works.find((x) => x.id === Number(id)) ?? fail(404, 'Lucrarea nu există.');
+    const { geometry, ...fields } = body ?? {};
+    if (geometry) w.geometry = geometry;
+    Object.assign(w.properties, fields);
+    return w;
+  }],
   ['DELETE', /^\/admin\/works\/(\d+)$/, ([id], q, b, ctx) => {
     requireAdmin(ctx);
     const i = works.findIndex((w) => w.id === Number(id));

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CircleMarker, Polygon, Polyline } from 'react-leaflet';
-import { Trash2, Undo2, Spline, Hexagon } from 'lucide-react';
+import { Pencil, Trash2, Undo2, Spline, Hexagon } from 'lucide-react';
 import AdminMap from '../AdminMap.jsx';
 import WorksLayer from '../../components/map/WorksLayer.jsx';
 import { lineToLatLngs, toLatLng } from '../../components/map/geo.js';
 import { ROUTE_COLORS } from '../../theme/mapColors.js';
 import { admin } from '../../api/endpoints.js';
-import { validateWork, workGeometry } from '../formsUtils.js';
+import { validateWork, workGeometry, workToForm } from '../formsUtils.js';
 import { formatDate } from '../../lib/format.js';
 import Field from '../../ui/Field.jsx';
 import Switch from '../../ui/Switch.jsx';
@@ -29,6 +29,7 @@ export default function WorksPage() {
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
   const [toDelete, setToDelete] = useState(null);
+  const [editing, setEditing] = useState(null); // lucrarea modificată acum sau null pentru una nouă
   const [error, setError] = useState(null);
 
   const load = () => admin.works().then((c) => setWorks(c.features)).catch((e) => setError(e.detail));
@@ -38,6 +39,23 @@ export default function WorksPage() {
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const geometry = workGeometry(points, mode);
+
+  const reset = () => {
+    setEditing(null);
+    setForm(EMPTY);
+    setPoints([]);
+    setErrors({});
+  };
+
+  const startEdit = (w) => {
+    const opened = workToForm(w);
+    setEditing(w);
+    setForm(opened.form);
+    setMode(opened.mode);
+    setPoints(opened.points);
+    setErrors({});
+    document.getElementById('w-title')?.focus();
+  };
 
   const save = async () => {
     const found = validateWork({ ...form, geometry });
@@ -49,10 +67,14 @@ export default function WorksPage() {
     }
     setBusy(true);
     try {
-      await admin.createWork({ ...form, geometry });
-      show({ tone: 'success', title: 'Lucrare salvată', message: form.blocks_route ? 'Traseele ocolesc zona în perioada aleasă.' : 'Apare pe hartă ca avertizare.' });
-      setForm(EMPTY);
-      setPoints([]);
+      if (editing) await admin.patchWork(editing.id, { ...form, geometry });
+      else await admin.createWork({ ...form, geometry });
+      show({
+        tone: 'success',
+        title: editing ? 'Lucrare modificată' : 'Lucrare salvată',
+        message: form.blocks_route ? 'Traseele ocolesc zona în perioada aleasă.' : 'Apare pe hartă ca avertizare.',
+      });
+      reset();
       load();
     } catch (e) {
       setError(e.detail);
@@ -134,6 +156,16 @@ export default function WorksPage() {
                   {w.properties.blocks_route ? 'Blochează traseele' : 'Doar avertizare'}
                 </Tag>
               </span>
+              <button
+                type="button"
+                aria-pressed={editing?.id === w.id}
+                aria-label={`Modifică lucrarea ${w.properties.title}`}
+                onClick={() => startEdit(w)}
+                className="flex h-12 items-center gap-1 rounded-icon px-2 font-bold hover:bg-subtle"
+              >
+                <Pencil aria-hidden="true" className="h-5 w-5" />
+                Modifică
+              </button>
               <button type="button" onClick={() => setToDelete(w)} className="flex h-12 items-center gap-1 rounded-icon px-2 font-bold text-error hover:bg-error-bg">
                 <Trash2 aria-hidden="true" className="h-5 w-5" />
                 Șterge
@@ -141,7 +173,9 @@ export default function WorksPage() {
             </li>
           ))}
         </ul>
-        <h2 className="m-0 border-t-2 border-border pt-4 text-[20px] font-bold">Lucrare nouă</h2>
+        <h2 className="m-0 border-t-2 border-border pt-4 text-[20px] font-bold">
+          {editing ? `Modifici: ${editing.properties.title}` : 'Lucrare nouă'}
+        </h2>
         <Field id="w-title" label="Titlu" value={form.title} onChange={(e) => set({ title: e.target.value })} error={errors.title} />
         <Field id="w-description" label="Descriere" optional multiline value={form.description} onChange={(e) => set({ description: e.target.value })} />
         <div className="grid grid-cols-2 gap-3">
@@ -154,11 +188,11 @@ export default function WorksPage() {
           {geometry ? `${mode === 'polygon' ? 'poligon' : 'linie'} cu ${points.length} puncte.` : errors.geometry ?? `${points.length} puncte; mai adaugă.`}
         </p>
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => { setForm(EMPTY); setPoints([]); setErrors({}); }}>
+          <Button variant="secondary" onClick={reset}>
             Renunță
           </Button>
           <Button loading={busy} loadingText="Se salvează…" onClick={save} className="flex-1">
-            Salvează lucrarea
+            {editing ? 'Salvează modificările' : 'Salvează lucrarea'}
           </Button>
         </div>
       </aside>
@@ -175,6 +209,7 @@ export default function WorksPage() {
               variant="danger"
               onClick={async () => {
                 await admin.deleteWork(toDelete.id).catch((e) => setError(e.detail));
+                if (editing?.id === toDelete.id) reset();
                 setToDelete(null);
                 load();
               }}

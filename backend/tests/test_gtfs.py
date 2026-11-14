@@ -62,11 +62,39 @@ def test_import_keeps_only_the_demo_area(db, feed_file, monkeypatch):
 
 
 def test_service_days_and_times_after_midnight(db, feed_file, monkeypatch):
-    run(monkeypatch, "--file", str(feed_file))
+    run(monkeypatch, "--file", str(feed_file), "--zi-demo", "2026-11-04")
     trip = db.scalar(select(Trip).where(Trip.gtfs_trip_id == "T2"))
-    assert trip.service_days == [date(2026, 11, d) for d in (3, 4, 5, 6, 7)]
+    in_feed = [d for d in trip.service_days if date(2026, 11, 2) <= d <= date(2026, 11, 8)]
+    assert in_feed == [date(2026, 11, d) for d in (3, 4, 5, 6, 7)]
     times = db.scalars(select(StopTime.arrival_time).where(StopTime.trip_id == trip.id)).all()
     assert sorted(times) == [24 * 3600 + 50 * 60, 25 * 3600 + 10 * 60]
+
+
+def trip_days(db, gtfs_trip_id="T1") -> list[date]:
+    return db.scalar(select(Trip).where(Trip.gtfs_trip_id == gtfs_trip_id)).service_days
+
+
+def test_days_before_the_feed_use_the_same_weekday_from_its_first_week(db, feed_file, monkeypatch):
+    # Fișierul începe luni, 2 noiembrie; demo-ul e vineri, 30 octombrie.
+    run(monkeypatch, "--file", str(feed_file), "--zi-demo", "2026-10-30")
+    before = [d for d in trip_days(db) if d < date(2026, 11, 2)]
+    # joi 29 (ieri, pentru cursele de după miezul nopții) ca joi 5, vineri 30 ca vineri 6,
+    # sâmbătă 31 ca sâmbătă 7 (adăugată în calendar_dates); duminică 1 nu circulă.
+    assert before == [date(2026, 10, 29), date(2026, 10, 30), date(2026, 10, 31)]
+
+
+def test_days_after_the_feed_use_the_same_weekday_from_its_last_week(db, feed_file, monkeypatch):
+    # Fișierul se termină duminică, 8 noiembrie; demo-ul e joi, 12 noiembrie.
+    run(monkeypatch, "--file", str(feed_file), "--zi-demo", "2026-11-12")
+    after = [d for d in trip_days(db) if d > date(2026, 11, 8)]
+    # Lunile cad pe luni 2, scoasă din calendar; duminicile nu circulă.
+    assert after == [date(2026, 11, d) for d in (11, 12, 13, 14, 17, 18, 19, 20, 21, 24, 25, 26)]
+
+
+def test_days_inside_the_feed_stay_as_published(db, feed_file, monkeypatch):
+    run(monkeypatch, "--file", str(feed_file), "--zi-demo", "2026-11-04")
+    assert date(2026, 11, 2) not in trip_days(db)  # scoasă în calendar_dates
+    assert date(2026, 11, 8) not in trip_days(db)  # duminică
 
 
 def test_second_import_needs_replace(db, feed_file, monkeypatch):

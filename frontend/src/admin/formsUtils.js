@@ -6,6 +6,17 @@ export function workGeometry(points, mode) {
   return points.length >= 2 ? { type: 'LineString', coordinates: points } : null;
 }
 
+// Invers: o lucrare salvată deschisă în formular, ca s-o poți modifica (zona fără punctul de închidere).
+export function workToForm(work) {
+  const p = work.properties;
+  const polygon = work.geometry.type === 'Polygon';
+  return {
+    form: { title: p.title, description: p.description ?? '', start_date: p.start_date, end_date: p.end_date, blocks_route: p.blocks_route },
+    mode: polygon ? 'polygon' : 'line',
+    points: polygon ? work.geometry.coordinates[0].slice(0, -1) : work.geometry.coordinates,
+  };
+}
+
 function dateErrors(f) {
   const e = {};
   if (!f.start_date) e.start_date = 'Alege data de început.';
